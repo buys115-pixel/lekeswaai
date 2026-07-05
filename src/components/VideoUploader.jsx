@@ -4,6 +4,7 @@ export default function VideoUploader({ onReady }) {
   const [handedness, setHandedness] = useState('right')
   const [fileName, setFileName] = useState(null)
   const [error, setError] = useState(null)
+  const [longClipWarning, setLongClipWarning] = useState(false)
   const videoRef = useRef(null)
   const inputRef = useRef(null)
 
@@ -21,6 +22,11 @@ export default function VideoUploader({ onReady }) {
     video.muted = true
     video.playsInline = true
     video.onloadedmetadata = () => {
+      if (video.duration > 6) {
+        setLongClipWarning(true)
+      } else {
+        setLongClipWarning(false)
+      }
       onReady({ video, handedness })
     }
   }
@@ -30,7 +36,9 @@ export default function VideoUploader({ onReady }) {
       <h2 className="text-2xl font-semibold text-fairway">Upload your swing</h2>
       <p className="mt-2 text-sm text-ink/60">
         Best results: face-on view (camera at chest height, facing you square-on),
-        full body in frame, from address to follow-through.
+        full body in frame, from address to follow-through. Keep it short —
+        trim to roughly 2–5 seconds, just the swing itself. Longer clips analyse
+        more slowly, especially on phones.
       </p>
 
       <div className="mt-6">
@@ -75,6 +83,12 @@ export default function VideoUploader({ onReady }) {
           onChange={(e) => handleFile(e.target.files[0])}
         />
         {fileName && <p className="mt-2 text-sm text-fairway">Loaded: {fileName}</p>}
+        {longClipWarning && (
+          <p className="mt-2 max-w-sm text-xs text-bushveld-dark">
+            That clip's a bit long — analysis will still run, but it'll be
+            faster (and more accurate) if you trim it down to just the swing next time.
+          </p>
+        )}
         {error && <p className="mt-2 text-sm text-bushveld-dark">{error}</p>}
       </div>
 

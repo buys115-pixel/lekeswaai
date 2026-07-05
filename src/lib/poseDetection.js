@@ -27,19 +27,26 @@ async function getDetector() {
 }
 
 /**
- * Extracts pose keypoints from a video element at a fixed frame rate.
+ * Extracts pose keypoints from a video element, sampling at a target frame
+ * rate but capped to a maximum total frame count. The cap matters most on
+ * mobile: a 16-second clip at 12fps is ~190 frames of pose inference, which
+ * can take a long time on phone hardware. Capping keeps analysis time
+ * roughly bounded regardless of how long the uploaded clip is.
  * @param {HTMLVideoElement} videoEl - a video element with a loaded source
  * @param {object} opts
- * @param {number} opts.sampleFps - how many frames per second to sample (default 15)
+ * @param {number} opts.sampleFps - preferred frames per second to sample (default 15)
+ * @param {number} opts.maxFrames - hard cap on total frames processed (default 60)
  * @param {(progress: number, keypoints: Array|null) => void} opts.onProgress - 0..1 progress + latest keypoints
  * @returns {Promise<Array<{time: number, keypoints: Array}>>}
  */
-export async function extractPoseSequence(videoEl, { sampleFps = 15, onProgress } = {}) {
+export async function extractPoseSequence(videoEl, { sampleFps = 15, maxFrames = 60, onProgress } = {}) {
   const detector = await getDetector()
   const duration = videoEl.duration
-  const frameInterval = 1 / sampleFps
+  // If sampling at sampleFps would exceed maxFrames, stretch the interval
+  // so total frames stay within the cap instead of just running longer.
+  const frameInterval = Math.max(1 / sampleFps, duration / maxFrames)
   const frames = []
-  const totalSteps = Math.floor(duration / frameInterval)
+  const totalSteps = Math.min(maxFrames, Math.floor(duration / frameInterval))
 
   for (let i = 0; i <= totalSteps; i++) {
     const t = i * frameInterval
