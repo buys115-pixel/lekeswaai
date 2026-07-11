@@ -62,12 +62,23 @@ export async function extractPoseSequence(videoEl, { sampleFps = 15, maxFrames =
   return frames
 }
 
-function seekTo(videoEl, time) {
+function seekTo(videoEl, time, timeoutMs = 2000) {
   return new Promise((resolve) => {
+    let settled = false
     function onSeeked() {
+      if (settled) return
+      settled = true
       videoEl.removeEventListener('seeked', onSeeked)
+      clearTimeout(timer)
       resolve()
     }
+    // Safety net: some mobile browsers occasionally never fire 'seeked'
+    // for a given seek (especially on detached/backgrounded video
+    // elements). Without this, analysis can hang forever on a black
+    // screen. If the event doesn't arrive in time, we proceed anyway —
+    // worst case that one frame is slightly off, which the fault
+    // heuristics are tolerant of.
+    const timer = setTimeout(onSeeked, timeoutMs)
     videoEl.addEventListener('seeked', onSeeked)
     videoEl.currentTime = time
   })

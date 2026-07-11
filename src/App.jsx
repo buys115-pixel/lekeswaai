@@ -19,6 +19,13 @@ export default function App() {
   const [videoData, setVideoData] = useState(null) // { video, handedness }
   const [faults, setFaults] = useState([])
   const uploadRef = useRef(null)
+  // This video element is mounted once and stays in the DOM for the whole
+  // flow (upload -> analyzing -> results), rather than being created fresh
+  // and detached inside VideoUploader. That matters on mobile — several
+  // mobile browsers throttle or refuse to reliably decode/seek a <video>
+  // that's been removed from the page, which is what caused analysis to
+  // hang on a black screen on some phones.
+  const sharedVideoRef = useRef(null)
 
   function goToUpload() {
     setStage(STAGE.UPLOAD)
@@ -51,13 +58,16 @@ export default function App() {
       <Hero onStart={goToUpload} />
 
       <div ref={uploadRef} className="px-4 py-4">
-        {stage === STAGE.UPLOAD && <VideoUploader onReady={handleVideoReady} />}
+        {stage === STAGE.UPLOAD && (
+          <VideoUploader videoRef={sharedVideoRef} onReady={handleVideoReady} />
+        )}
 
         {stage === STAGE.ANALYZING && videoData && (
           <SwingAnalyzer
-            video={videoData.video}
+            video={sharedVideoRef.current}
             handedness={videoData.handedness}
             onComplete={handleAnalysisComplete}
+            onCancel={restart}
           />
         )}
 
@@ -65,6 +75,17 @@ export default function App() {
           <ResultsPanel faults={faults} onRestart={restart} onUpgradeClick={scrollToPricing} />
         )}
       </div>
+
+      {/* Kept small and visually tucked away, but deliberately NOT
+          display:none — real presence in the DOM/layout is what keeps
+          mobile browsers decoding it reliably. */}
+      <video
+        ref={sharedVideoRef}
+        muted
+        playsInline
+        className="pointer-events-none fixed bottom-1 right-1 h-1 w-1 opacity-0"
+        aria-hidden="true"
+      />
 
       <PricingSection />
 

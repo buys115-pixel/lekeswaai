@@ -9,14 +9,26 @@ const STAGES = [
   'Checking your positions against common faults…',
 ]
 
-export default function SwingAnalyzer({ video, handedness, onComplete }) {
+export default function SwingAnalyzer({ video, handedness, onComplete, onCancel }) {
   const canvasRef = useRef(null)
   const [progress, setProgress] = useState(0)
   const [stageIdx, setStageIdx] = useState(0)
   const [error, setError] = useState(null)
+  const [stalled, setStalled] = useState(false)
+  const lastProgressAt = useRef(Date.now())
 
   useEffect(() => {
     let cancelled = false
+
+    // Watchdog: if progress hasn't moved in 20s, something's stuck
+    // (common on slower phones/older hardware). We can't forcibly abort
+    // mid-inference, but we can let the user know it's not just slow —
+    // and give them a way out instead of staring at a stalled bar forever.
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastProgressAt.current > 20000) {
+        setStalled(true)
+      }
+    }, 4000)
 
     async function run() {
       try {
@@ -31,6 +43,8 @@ export default function SwingAnalyzer({ video, handedness, onComplete }) {
           sampleFps: 12,
           onProgress: (p, keypoints) => {
             if (cancelled) return
+            lastProgressAt.current = Date.now()
+            setStalled(false)
             setProgress(p)
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
             if (keypoints) drawKeypoints(ctx, keypoints)
@@ -67,6 +81,7 @@ export default function SwingAnalyzer({ video, handedness, onComplete }) {
     run()
     return () => {
       cancelled = true
+      clearInterval(watchdog)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -98,10 +113,26 @@ export default function SwingAnalyzer({ video, handedness, onComplete }) {
       </div>
       <p className="mt-2 font-mono text-xs text-ink/40">{Math.round(progress * 100)}%</p>
 
+      {stalled && !error && (
+        <div className="mt-6 rounded-xl bg-highveld/10 p-4 text-sm text-highveld-dark">
+          This is taking longer than usual — some phones are just slower at this.
+          You can keep waiting, or try a shorter clip instead.
+        </div>
+      )}
+
       {error && (
         <div className="mt-6 rounded-xl bg-bushveld/10 p-4 text-sm text-bushveld-dark">
           {error}
         </div>
+      )}
+
+      {(stalled || error) && onCancel && (
+        <button
+          onClick={onCancel}
+          className="mt-4 rounded-full border border-ink/15 px-5 py-2 text-sm font-semibold text-ink/70 hover:border-ink/30"
+        >
+          Try a different clip
+        </button>
       )}
     </section>
   )

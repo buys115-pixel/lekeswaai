@@ -1,12 +1,22 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 
-export default function VideoUploader({ onReady }) {
+/**
+ * VideoUploader
+ * -----------------------------------------------------------------------
+ * Note: `videoRef` is passed down from App.jsx rather than created here.
+ * That matters more than it looks — several mobile browsers (notably
+ * iOS Safari) throttle or refuse to properly decode/seek a <video>
+ * element that isn't attached to the visible page. Keeping one shared,
+ * visible video element mounted for the whole analysis flow (instead of
+ * creating a detached one in memory) is what makes seeking reliably work
+ * on phones instead of hanging on a black screen.
+ */
+export default function VideoUploader({ videoRef, onReady }) {
   const [handedness, setHandedness] = useState('right')
   const [fileName, setFileName] = useState(null)
   const [error, setError] = useState(null)
   const [longClipWarning, setLongClipWarning] = useState(false)
-  const videoRef = useRef(null)
-  const inputRef = useRef(null)
+  const [previewReady, setPreviewReady] = useState(false)
 
   function handleFile(file) {
     if (!file) return
@@ -15,19 +25,33 @@ export default function VideoUploader({ onReady }) {
       return
     }
     setError(null)
+    setPreviewReady(false)
     setFileName(file.name)
+
+    const video = videoRef.current
     const url = URL.createObjectURL(file)
-    const video = document.createElement('video')
     video.src = url
-    video.muted = true
-    video.playsInline = true
-    video.onloadedmetadata = () => {
-      if (video.duration > 6) {
-        setLongClipWarning(true)
-      } else {
-        setLongClipWarning(false)
+
+    video.onloadedmetadata = async () => {
+      try {
+        // "Prime" the decoder: on iOS in particular, a video that has
+        // never actually played can fail to seek/decode reliably.
+        // A muted play+immediate pause forces the first frame to decode
+        // without the user seeing playback happen.
+        await video.play()
+        video.pause()
+        video.currentTime = 0
+      } catch {
+        // Some browsers still block this even muted — seeking usually
+        // still works, so we continue rather than blocking the user.
       }
+      setLongClipWarning(video.duration > 6)
+      setPreviewReady(true)
       onReady({ video, handedness })
+    }
+
+    video.onerror = () => {
+      setError("Couldn't load that video. Try a different clip or format (.mp4 works best).")
     }
   }
 
@@ -60,7 +84,7 @@ export default function VideoUploader({ onReady }) {
         </div>
       </div>
 
-      <div
+      <label
         className="mt-6 flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-ink/20 bg-sand/60 px-6 py-12 text-center"
         onDragOver={(e) => e.preventDefault()}
         onDrop={(e) => {
@@ -68,15 +92,11 @@ export default function VideoUploader({ onReady }) {
           handleFile(e.dataTransfer.files[0])
         }}
       >
-        <p className="text-ink/60">Drag a swing video here, or</p>
-        <button
-          onClick={() => inputRef.current?.click()}
-          className="rounded-full bg-bushveld px-6 py-2.5 font-semibold text-sand hover:bg-bushveld-dark"
-        >
+        <p className="text-ink/60">Drag a swing video here, or tap to choose one</p>
+        <span className="rounded-full bg-bushveld px-6 py-2.5 font-semibold text-sand hover:bg-bushveld-dark">
           Choose a video
-        </button>
+        </span>
         <input
-          ref={inputRef}
           type="file"
           accept="video/*"
           className="hidden"
@@ -90,9 +110,13 @@ export default function VideoUploader({ onReady }) {
           </p>
         )}
         {error && <p className="mt-2 text-sm text-bushveld-dark">{error}</p>}
-      </div>
+      </label>
 
-      <video ref={videoRef} className="hidden" />
+      {previewReady && (
+        <div className="mt-6 flex justify-center">
+          <p className="text-xs text-ink/40">Preview loaded ✓ ready to analyse</p>
+        </div>
+      )}
     </section>
   )
 }
